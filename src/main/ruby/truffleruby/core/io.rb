@@ -1704,8 +1704,7 @@ class IO
 
     case length
     when 0
-      buffer&.clear
-      return ''.b
+      return buffer ? buffer.clear : ''.b
     when nil
       str = IO.read_encode self, read_all
       return str unless buffer

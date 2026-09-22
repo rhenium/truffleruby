@@ -308,13 +308,13 @@ describe "IO#read" do
 
     buf = +'non-empty string'
     @io.pos = 10
-    @io.read(nil, buf).should == ""
+    @io.read(nil, buf).should.equal?(buf)
 
     buf.should == ''
 
     buf = +'non-empty string'
     @io.pos = 10
-    @io.read(0, buf).should == ""
+    @io.read(0, buf).should.equal?(buf)
 
     buf.should == ''
   end
