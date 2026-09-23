@@ -466,7 +466,10 @@ class IO
 
     options[:mode] = 'r' unless options.key? :mode
     io = File.open(name, **options)
-    each_reader = io.__send__ :create_each_reader, separator, limit, chomp, true
+    each_reader = io.__send__ :create_each_reader, separator, limit, chomp
+    if Primitive.nil? each_reader
+      raise ArgumentError, 'invalid limit: 0 for foreach'
+    end
     begin
       each_reader.each(&block)
     ensure
@@ -1251,7 +1254,7 @@ class IO
     return_string << '>'
   end
 
-  private def create_each_reader(sep_or_limit = $/, limit = nil, chomp = false, raise_error)
+  private def create_each_reader(sep_or_limit, limit, chomp)
     ensure_open_and_readable
 
     if limit
@@ -1271,9 +1274,7 @@ class IO
       end
     end
 
-    if limit == 0 && raise_error
-      raise ArgumentError, "invalid limit: #{limit} for each"
-    end
+    return if limit == 0
 
     EachReader.new(self, @ibuffer, sep, limit, chomp)
   end
@@ -1281,7 +1282,10 @@ class IO
   def each(sep_or_limit = $/, limit = nil, chomp: false, &block)
     return to_enum(:each, sep_or_limit, limit, chomp: chomp) unless block_given?
 
-    each_reader = create_each_reader(sep_or_limit, limit, chomp, true)
+    each_reader = create_each_reader(sep_or_limit, limit, chomp)
+    if Primitive.nil? each_reader
+      raise ArgumentError, 'invalid limit: 0 for each_line'
+    end
 
     each_reader.each(&block)
 
@@ -1490,12 +1494,15 @@ class IO
   end
 
   def gets(sep_or_limit = $/, limit = nil, chomp: false)
-    line = nil
-    each_reader = create_each_reader(sep_or_limit, limit, chomp, false)
+    each_reader = create_each_reader(sep_or_limit, limit, chomp)
 
-    each_reader.each do |l|
-      line = l
-      break
+    if Primitive.nil? each_reader
+      line = IO.read_encode(self, +'')
+    else
+      each_reader.each do |l|
+        line = l
+        break
+      end
     end
 
     Primitive.io_last_line_set(Primitive.caller_special_variables, line)
@@ -1835,7 +1842,10 @@ class IO
   #  f.readlines[0]   #=> "This is line one\n"
   def readlines(sep_or_limit = $/, limit = nil, **options)
     chomp = options.fetch(:chomp, false)
-    each_reader = create_each_reader(sep_or_limit, limit, chomp, true)
+    each_reader = create_each_reader(sep_or_limit, limit, chomp)
+    if Primitive.nil? each_reader
+      raise ArgumentError, 'invalid limit: 0 for readlines'
+    end
 
     ret = []
     each_reader.each { |line| ret << line }
