@@ -114,7 +114,6 @@ class IO
       @start = 0
       @used = 0
       @total = SIZE
-      @eof = false
     end
 
     # Returns the number of bytes available in the buffer.
@@ -139,16 +138,10 @@ class IO
       @used == @total
     end
 
-    # Returns +true+ if the buffer is empty and cannot be filled further.
-    def exhausted?
-      @eof and empty?
-    end
-
     # Resets the buffer state so the buffer can be filled again.
     def reset!
       @start = 0
       @used = 0
-      @eof = false
     end
 
     def fill(io, max = DEFAULT_READ_SIZE)
@@ -181,9 +174,7 @@ class IO
 
         if empty?
           reset!
-          if fill(io, max) == 0
-            @eof = true
-          end
+          fill(io, max)
           size
         else
           Primitive.min(size, max)
@@ -477,7 +468,7 @@ class IO
     io = File.open(name, **options)
     each_reader = io.__send__ :create_each_reader, separator, limit, chomp, true
     begin
-      each_reader&.each(&block)
+      each_reader.each(&block)
     ensure
       io.close
     end
@@ -1062,7 +1053,7 @@ class IO
       last_scan_end = 0
       separator_byte_size = @separator.bytesize
 
-      until @buffer.exhausted?
+      while true
         available = @buffer.fill_from @io, @skip
         break unless available > 0
 
@@ -1151,7 +1142,7 @@ class IO
       #TODO: implement ignoring encoding with negative limit
       wanted = limit = @limit.abs
 
-      until @buffer.exhausted?
+      while true
         available = @buffer.fill_from @io, @skip
         break unless available > 0
 
@@ -1185,10 +1176,8 @@ class IO
     # Method G
     def read_all
       str = +''
-      unless @buffer.exhausted?
-        tmp_str = @buffer.shift
-        str << tmp_str unless tmp_str.empty?
-      end
+      tmp_str = @buffer.shift
+      str << tmp_str unless tmp_str.empty?
 
       while (tmp_str = Truffle::POSIX.read_string_at_least_one_byte(@io, InternalBuffer::DEFAULT_READ_SIZE))
         str << tmp_str
@@ -1202,8 +1191,10 @@ class IO
       str = +''
       wanted = limit = @limit.abs
 
-      until @buffer.exhausted?
+      while true
         available = @buffer.fill_from @io
+        break unless available > 0
+
         if wanted < available
           str << @buffer.shift(wanted)
 
@@ -1284,8 +1275,6 @@ class IO
       raise ArgumentError, "invalid limit: #{limit} for each"
     end
 
-    return if @ibuffer.exhausted?
-
     EachReader.new(self, @ibuffer, sep, limit, chomp)
   end
 
@@ -1293,8 +1282,6 @@ class IO
     return to_enum(:each, sep_or_limit, limit, chomp: chomp) unless block_given?
 
     each_reader = create_each_reader(sep_or_limit, limit, chomp, true)
-
-    return if Primitive.nil? each_reader
 
     each_reader.each(&block)
 
@@ -1358,8 +1345,7 @@ class IO
   # So IO#sysread doesn't work with IO#eof?.
   def eof?
     ensure_open_and_readable
-    @ibuffer.fill_from self unless @ibuffer.exhausted?
-    @ibuffer.exhausted?
+    @ibuffer.fill_from(self) == 0
   end
   alias_method :eof, :eof?
 
@@ -1506,7 +1492,6 @@ class IO
   def gets(sep_or_limit = $/, limit = nil, chomp: false)
     line = nil
     each_reader = create_each_reader(sep_or_limit, limit, chomp, false)
-    return line if Primitive.nil? each_reader
 
     each_reader.each do |l|
       line = l
@@ -1730,44 +1715,34 @@ class IO
       return buffer.replace(str)
     end
 
-    if @ibuffer.exhausted?
-      buffer.clear if buffer
-      return nil
-    end
-
     raise ArgumentError, "negative length #{length} given" if length < 0
 
     str = +''
     needed = length
-    while needed > 0 and not @ibuffer.exhausted?
+    while needed > 0
       count = @ibuffer.fill_from(self, nil, needed)
-      str << @ibuffer.shift(count)
-      str = nil if str.empty?
+      break if count == 0
 
+      str << @ibuffer.shift(count)
       needed -= count
     end
 
-    if str
-      if buffer
-        buffer.replace str.force_encoding(buffer.encoding)
-      else
-        str.force_encoding Encoding::BINARY
-      end
-    else
+    if str.empty?
       buffer.clear if buffer
       nil
+    elsif buffer
+      buffer.replace str.force_encoding(buffer.encoding)
+    else
+      str.force_encoding Encoding::BINARY
     end
   end
 
   ##
   # Reads all input until +#eof?+ is true. Returns the input read.
-  # If the buffer is already exhausted, returns +""+.
   private def read_all
     str = +''
-    unless @ibuffer.exhausted?
-      if !(tmp_str = @ibuffer.shift).empty?
-        str << tmp_str
-      end
+    if !(tmp_str = @ibuffer.shift).empty?
+      str << tmp_str
     end
 
     while (tmp_str = Truffle::POSIX.read_string_at_least_one_byte(self, InternalBuffer::DEFAULT_READ_SIZE))
@@ -1864,7 +1839,7 @@ class IO
     each_reader = create_each_reader(sep_or_limit, limit, chomp, true)
 
     ret = []
-    each_reader&.each { |line| ret << line }
+    each_reader.each { |line| ret << line }
     ret
   end
 

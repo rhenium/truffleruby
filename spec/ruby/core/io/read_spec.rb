@@ -452,6 +452,13 @@ describe "IO#read" do
     @io.read(1).should == nil
   end
 
+  it "reads additional contents appended after reaching end of file" do
+    @io.read
+    @io.read(1).should == nil
+    File.open(@fname, "a") { |f| f << "appended" }
+    @io.read(100).should == "appended"
+  end
+
   it "with length argument returns nil when the current pos is bigger than the content size" do
     @io.pos = 1000
     @io.read(1).should == nil
