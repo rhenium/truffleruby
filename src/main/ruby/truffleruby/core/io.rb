@@ -168,10 +168,8 @@ class IO
     # +IO+ instance. Any new data causes this method to return.
     #
     # Returns the number of bytes in the buffer.
-    def fill_from(io, skip = nil, max = DEFAULT_READ_SIZE)
+    def fill_from(io, max = DEFAULT_READ_SIZE)
       TruffleRuby.synchronized(self) do
-        discard skip if skip
-
         if empty?
           reset!
           fill(io, max)
@@ -182,14 +180,17 @@ class IO
       end
     end
 
-    # Advances the beginning-of-buffer marker past any number
-    # of contiguous characters == +skip+. For example, if +skip+
-    # is ?\n and the buffer contents are "\n\n\nAbc...", the
-    # start marker will be positioned on 'A'.
-    def discard(skip)
-      while @start < @used
-        break unless @storage[@start] == skip
-        @start += 1
+    # Reads until the first character that is not "\n" is found, or
+    # until the end of the stream. For example, if the buffer contents
+    # are "\n\n\nAbc...", the start marker will be positioned on 'A'.
+    def discard_newlines(io)
+      TruffleRuby.synchronized(self) do
+        begin
+          while @start < @used
+            return unless @storage[@start] == 10
+            @start += 1
+          end
+        end while fill_from(io) > 0
       end
     end
 
@@ -1025,17 +1026,20 @@ class IO
       @buffer = buffer
       @separator = separator
       @limit = limit
-      @skip = nil
       @chomp = chomp
     end
 
     def each(&block)
-      if @separator
-        if @separator.empty?
-          @separator = "\n\n"
-          @skip = 10
+      if @separator == ''
+        @separator = "\n\n"
+        @buffer.discard_newlines @io
+        return each do |line|
+          @buffer.discard_newlines @io
+          yield line
         end
+      end
 
+      if @separator
         if @limit
           read_to_separator_with_limit(&block)
         else
@@ -1057,7 +1061,7 @@ class IO
       separator_byte_size = @separator.bytesize
 
       while true
-        available = @buffer.fill_from @io, @skip
+        available = @buffer.fill_from @io
         break unless available > 0
 
         if count = @buffer.find(@separator)
@@ -1146,7 +1150,7 @@ class IO
       wanted = limit = @limit.abs
 
       while true
-        available = @buffer.fill_from @io, @skip
+        available = @buffer.fill_from @io
         break unless available > 0
 
         if count = @buffer.find(@separator)
@@ -1222,7 +1226,6 @@ class IO
 
       s.chomp!(@separator) if @chomp
       $. = @io.__send__(:increment_lineno)
-      @buffer.discard @skip if @skip
 
       s
     end
@@ -1726,7 +1729,7 @@ class IO
     str = +''
     needed = length
     while needed > 0
-      count = @ibuffer.fill_from(self, nil, needed)
+      count = @ibuffer.fill_from(self, needed)
       break if count == 0
 
       str << @ibuffer.shift(count)
