@@ -1139,7 +1139,7 @@ class IO
       end
 
       str << @buffer.shift
-      yield prepare_read_string(str) unless str.empty?
+      yield prepare_read_string(str, true) unless str.empty?
     end
 
     # method B, E
@@ -1153,31 +1153,35 @@ class IO
         available = @buffer.fill_from @io
         break unless available > 0
 
-        if count = @buffer.find(@separator)
-          bytes = Primitive.min(count, wanted)
-          str << @buffer.shift(bytes)
+        # TODO: @buffer needs to be converted to the internal encoding before
+        # we can search for the separator
+        count = @buffer.find(@separator)
+        if count ? wanted < count : wanted <= available
+          str << @buffer.shift(wanted)
+          str = @buffer.read_to_char_boundary(@io, str)
+
+          if str.end_with?(@separator)
+            str.chomp!(@separator) if @chomp
+            $. = @io.__send__(:increment_lineno)
+          end
+          yield str
+
+          str = +''
+          wanted = limit
+        elsif count
+          str << @buffer.shift(count)
 
           yield prepare_read_string(str)
 
           str = +''
           wanted = limit
         else
-          if wanted < available
-            str << @buffer.shift(wanted)
-            str = @buffer.read_to_char_boundary(@io, str)
-
-            yield prepare_read_string(str)
-
-            str = +''
-            wanted = limit
-          else
-            str << @buffer.shift
-            wanted -= available
-          end
+          str << @buffer.shift
+          wanted -= available
         end
       end
 
-      yield prepare_read_string(str) unless str.empty?
+      yield prepare_read_string(str, true) unless str.empty?
     end
 
     # Method G
@@ -1190,7 +1194,7 @@ class IO
         str << tmp_str
       end
 
-      yield prepare_read_string(str) unless str.empty?
+      yield prepare_read_string(str, true) unless str.empty?
     end
 
     # Method H
@@ -1202,12 +1206,10 @@ class IO
         available = @buffer.fill_from @io
         break unless available > 0
 
-        if wanted < available
+        if wanted <= available
           str << @buffer.shift(wanted)
-
           str = @buffer.read_to_char_boundary(@io, str)
 
-          $. = @io.__send__(:increment_lineno)
           yield str
 
           str = +''
@@ -1218,13 +1220,13 @@ class IO
         end
       end
 
-      yield prepare_read_string(str) unless str.empty?
+      yield prepare_read_string(str, true) unless str.empty?
     end
 
-    def prepare_read_string(str)
+    def prepare_read_string(str, to_eof = false)
       s = IO.read_encode(@io, str)
 
-      s.chomp!(@separator) if @chomp
+      s.chomp!(@separator) if @chomp && !to_eof
       $. = @io.__send__(:increment_lineno)
 
       s

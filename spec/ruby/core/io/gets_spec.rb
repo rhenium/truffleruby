@@ -55,6 +55,13 @@ describe "IO#gets" do
         $..should == @count += 1
       end
     end
+
+    it "does not update $. or lineno if limit is reached before the end of stream" do
+      $. = 0
+      @io.gets(1).should == IOSpecs.lines[0][0, 1]
+      @io.lineno.should == 0
+      $..should == 0
+    end
   end
 
   describe "with nil separator" do
@@ -153,6 +160,22 @@ describe "IO#gets" do
   describe "when passed chomp" do
     it "returns the first line without a trailing newline character" do
       @io.gets(chomp: true).should == IOSpecs.lines_without_newline_characters[0]
+    end
+
+    it "does not remove a trailing \\r at the end of stream" do
+      IO.pipe do |read, write|
+        write.write("line\r")
+        write.close
+        read.gets(chomp: true).should == "line\r"
+      end
+    end
+
+    it "does not remove a trailing \\r if the limit is reached before the end of line" do
+      IO.pipe do |read, write|
+        write.write("line\r\n")
+        write.close
+        read.gets(5, chomp: true).should == "line\r"
+      end
     end
 
     it "raises exception when options passed as Hash" do

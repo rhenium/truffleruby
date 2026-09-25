@@ -17,7 +17,6 @@ exclude :test_getc_invalid3, "ArgumentError: UTF-16 string byte length (1) is no
 exclude :test_getc_newlineconv_invalid, "NoMethodError: undefined method `valid_encoding?' for nil"
 exclude :test_getc_stateful_conversion, "<\"\\x{A3B0}\"> expected but was <\"\">."
 exclude :test_gets_invalid, "<\"\\x{A4A6}\\x{A4A8}\"> expected but was <nil>."
-exclude :test_gets_limit, "<\"\\x{A4A2}\"> expected but was <\"\\xA4\">."
 exclude :test_ignored_encoding_option, "expected: /エンコーディング/"
 exclude :test_inspect_nonascii, "Errno::EILSEQ: Invalid or incomplete multibyte or wide character - ��" if RUBY_PLATFORM.include?('darwin')
 exclude :test_invalid_r, "Encoding::InvalidByteSequenceError: \"\\x80\" on UTF-8"
